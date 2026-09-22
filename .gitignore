@@ -1,0 +1,26 @@
+# live database and backups - never commit
+*.db
+*.db-journal
+*.db-wal
+*.bulk_before_*
+*.role_before_*
+backups/
+
+# generated report output
+reports*.xlsx
+manday_*.xlsx
+forecast_*.xlsx
+
+# python
+__pycache__/
+*.pyc
+
+# local runtime (autostart / watchdog)
+server.log
+server.log.old
+watchdog.log
+watchdog.log.old
+python_for_server.txt
+# pre-migration snapshots: tasklog.db.<change>_before_<date>
+# (the *.db rule above misses these - the timestamp is the extension)
+tasklog.db.*

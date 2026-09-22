@@ -1,0 +1,206 @@
+[
+ {
+  "cat": "Floor",
+  "alias": "Type & Boundry",
+  "id": 63,
+  "name": "Floor Type"
+ },
+ {
+  "cat": "Wall",
+  "alias": "Curtain wall top mullion",
+  "id": 58,
+  "name": "Curtain wall top mullion"
+ },
+ {
+  "cat": "Wall",
+  "alias": "Missing wall",
+  "id": 59,
+  "name": "Missing wall"
+ },
+ {
+  "cat": "Wall",
+  "alias": "FHC Wall",
+  "id": 60,
+  "name": "Missing Fire hydrant (FHC) wall"
+ },
+ {
+  "cat": "Wall",
+  "alias": "Item type & Finish parameter",
+  "id": 61,
+  "name": "Check & Update wall Item type & Finish parameter"
+ },
+ {
+  "cat": "Wall",
+  "alias": "HPL Panel",
+  "id": 62,
+  "name": "HPL Panel (Wall protection wall) Clash & Floating"
+ },
+ {
+  "cat": "Ceiling",
+  "alias": "Material Pattern Alignment",
+  "id": 66,
+  "name": "Material Patten alignment"
+ },
+ {
+  "cat": "Ceiling",
+  "alias": "Height",
+  "id": 67,
+  "name": "Ceiling Height"
+ },
+ {
+  "cat": "Ceiling",
+  "alias": "Type",
+  "id": 69,
+  "name": "Ceiling Type"
+ },
+ {
+  "cat": "Ceiling",
+  "alias": "Bulk head",
+  "id": 68,
+  "name": "Bulk head"
+ },
+ {
+  "cat": "Ceiling",
+  "alias": "Removable panel",
+  "id": 70,
+  "name": "Removable panel Location"
+ },
+ {
+  "cat": "Ceiling",
+  "alias": "Façade & ceiling connection",
+  "id": 71,
+  "name": "Coordination with Ceiling and façade connecting portion"
+ },
+ {
+  "cat": "Bathroom",
+  "alias": "Tile layout",
+  "id": 85,
+  "name": "Floor Tile Layout"
+ },
+ {
+  "cat": "Bathroom",
+  "alias": "Skirting",
+  "id": 87,
+  "name": "Skirting tile layout & clash"
+ },
+ {
+  "cat": "Bathroom",
+  "alias": "Drain opening",
+  "id": 88,
+  "name": "Drain opening"
+ },
+ {
+  "cat": "Bathroom",
+  "alias": "Cubicle door number & Swing",
+  "id": 89,
+  "name": "Cubicle door number & Swing direction"
+ },
+ {
+  "cat": "Bathroom",
+  "alias": "Missing Fixture",
+  "id": 90,
+  "name": "Missing fixtures"
+ },
+ {
+  "cat": "Bathroom",
+  "alias": "Sink Tape Location",
+  "id": 91,
+  "name": "Sink tap location"
+ },
+ {
+  "cat": "Signage",
+  "alias": "Location",
+  "id": 72,
+  "name": "Signage location"
+ },
+ {
+  "cat": "Signage",
+  "alias": "Clash",
+  "id": 73,
+  "name": "Signage class with door & Floating"
+ },
+ {
+  "cat": "Signage",
+  "alias": "Arabic font",
+  "id": 74,
+  "name": "Add Arabic font"
+ },
+ {
+  "cat": "Door",
+  "alias": "Missing door",
+  "id": 75,
+  "name": "Place missing doors"
+ },
+ {
+  "cat": "Door",
+  "alias": "Door type",
+  "id": 76,
+  "name": "Door Type number"
+ },
+ {
+  "cat": "Door",
+  "alias": "Handle location",
+  "id": 77,
+  "name": "Door Handle location"
+ },
+ {
+  "cat": "Door",
+  "alias": "Swing Direction",
+  "id": 78,
+  "name": "Swing direction"
+ },
+ {
+  "cat": "Window",
+  "alias": "Missing windows",
+  "id": 79,
+  "name": "Place missing windows"
+ },
+ {
+  "cat": "Window",
+  "alias": "Window size",
+  "id": 80,
+  "name": "Check & update size of window"
+ },
+ {
+  "cat": "Window",
+  "alias": "Sill height from FFL",
+  "id": 81,
+  "name": "Check & update sill height from FFL"
+ },
+ {
+  "cat": "Handrail",
+  "alias": "Location",
+  "id": 82,
+  "name": "Handrail location"
+ },
+ {
+  "cat": "Handrail",
+  "alias": "Clash",
+  "id": 83,
+  "name": "Clash with wall & column"
+ },
+ {
+  "cat": "Handrail",
+  "alias": "Bracket diemsion as per ABD",
+  "id": 84,
+  "name": "Handrail bracket dimension mismatch"
+ },
+ {
+  "cat": "Common",
+  "alias": "Fire rated lines",
+  "id": 92,
+  "name": "Check & update fire rated lines"
+ },
+ {
+  "cat": "Common",
+  "alias": "Lift indicator clash",
+  "id": 93,
+  "name": "Lift Indicator clash with ceiling"
+ },
+ {
+  "cat": "Common",
+  "alias": "Sircase railing clash",
+  "id": 94,
+  "name": "Staircase Railing clash & floating"
+ }
+]

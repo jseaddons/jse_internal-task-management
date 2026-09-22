@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urlparse, quote
 import forecast as forecast_app
 from export_reports import (
     daily_fill_status, next_working_day, on_team_that_day, project_team_people,
-    with_managers_excluded,
+    range_fill_status, with_managers_excluded,
 )
 from bulk_import import parse_level_name, upsert_project_level
 
@@ -564,6 +564,14 @@ def connect():
     con = sqlite3.connect(DB_PATH, timeout=15)
     con.execute("PRAGMA foreign_keys = ON")
     con.execute("PRAGMA busy_timeout = 15000")
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS leave_days (
+            person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+            work_date TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (person_id, work_date)
+        )
+    """)
     con.row_factory = sqlite3.Row
     return con
 
@@ -649,6 +657,45 @@ def fmt_day(iso):
         return dt.date.fromisoformat(str(iso)[:10]).strftime("%d %b %Y")
     except ValueError:
         return str(iso)
+
+
+def mark_leave(person_id, start_date, end_date=None):
+    start = parse_iso_date(start_date)
+    end = parse_iso_date(end_date or start_date)
+    if not start or not end or end < start:
+        raise ValueError("Choose a valid leave From and To date.")
+    con = connect()
+    day = dt.date.fromisoformat(start)
+    last = dt.date.fromisoformat(end)
+    while day <= last:
+        if day.weekday() < 5:
+            con.execute("INSERT OR IGNORE INTO leave_days(person_id, work_date) VALUES (?, ?)",
+                        (int(person_id), day.isoformat()))
+        day += dt.timedelta(days=1)
+    con.commit()
+    con.close()
+    return start, end
+
+
+def remove_leave(person_id, work_date):
+    day = parse_iso_date(work_date)
+    if not day:
+        raise ValueError("Choose a valid leave date.")
+    con = connect()
+    con.execute("DELETE FROM leave_days WHERE person_id=? AND work_date=?",
+                (int(person_id), day))
+    con.commit()
+    con.close()
+    return day
+
+
+def leave_days_for(person_id):
+    con = connect()
+    rows = [r[0] for r in con.execute(
+        "SELECT work_date FROM leave_days WHERE person_id=? ORDER BY work_date DESC",
+        (int(person_id),))]
+    con.close()
+    return rows
 
 
 def ensure_project_people_history(con):
@@ -1202,7 +1249,7 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
   <form method="POST" action="/add">
     <input type="hidden" name="edit_id" id="edit_id" value="{edit_id}">
     <div class="grid">
-      <div><label>Date</label><input type="date" name="work_date" value="{today}" required></div>
+            <div><label>Task date</label><input type="date" name="work_date" value="{today}" required></div>
       <div><label>Project code</label><select name="project" id="project" required></select></div>
       <div><label>Project name</label><input id="project_name" readonly></div>
 
@@ -1246,10 +1293,12 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 
       <div class="full"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
     </div>
-    <div class="actions"><button type="submit">Save task</button>
-      <button type="button" onclick="clearForm()" style="background:#6b7280">Clear form</button>
-      <span class="hint">After Save, change In/Out if this is another slice of the same day.</span></div>
+        <div class="actions"><button type="submit">Save task</button>
+            <button type="button" onclick="clearForm()" style="background:#6b7280">Clear form</button>
+            <span class="hint">Leave dates are weekdays only. Task date is separate.</span></div>
   </form>
+
+    {leave_html}
 
   <h2>Last <span id="recent_count">0</span> entries
       <span class="hint" id="recent_scope"></span></h2>
@@ -3849,7 +3898,7 @@ def render_reports(q, banner=""):
         + rsel("internal", "Internal (effort by date)")
         + rsel("compare", "Forecast vs Actual")
         + rsel("matrix", "Zone / Level progress grid")
-        + rsel("notfilled", "Who didn't fill (daily)") + '</select></div>'
+        + rsel("notfilled", "Who didn't fill (date range)") + '</select></div>'
         '<div><label>Project code</label><select name="project" id="rep_project">'
         '<option value="">(any)</option>'
         + "".join(
@@ -3927,18 +3976,19 @@ def render_reports(q, banner=""):
 
         if report == "notfilled":
             proj = getv("project")
-            day = getv("dfrom") or getv("dto") or dt.date.today().isoformat()
+            start = getv("dfrom") or getv("dto") or dt.date.today().isoformat()
+            end = getv("dto") or start
             loc = getv("location") or None
             if not proj:
                 results = ("<p class='sub' style='color:#a33'><b>Pick a project code</b> "
-                           "to see who on the team did not log a task that day.</p>")
+                           "to see who on the team did not log a task in the date range.</p>")
             else:
-                status = daily_fill_status(con, day, proj, loc)
-                headers = ["Person", "Emp ID", "Role", "Location"]
+                status = range_fill_status(con, start, end, proj, loc)
+                headers = ["Date", "Person", "Emp ID", "Role", "Location"]
                 body = "".join(
                     "<tr>" + "".join(
                         f"<td>{html.escape('' if p[k] is None else str(p[k]))}</td>"
-                        for k in ("name", "emp_code", "role", "location")) + "</tr>"
+                        for k in ("missing_date", "name", "emp_code", "role", "location")) + "</tr>"
                     for p in status["missing"])
                 hint = ""
                 if not status["expected"]:
@@ -3950,12 +4000,12 @@ def render_reports(q, banner=""):
                 loc_bit = f" · Location {html.escape(loc)}" if loc else ""
                 results = (
                     hint +
-                    f"<p class='sub'><b>Who didn't fill</b> — {html.escape(proj)} · {html.escape(day)}"
+                    f"<p class='sub'><b>Who didn't fill</b> — {html.escape(proj)} · {html.escape(start)} to {html.escape(end)}"
                     f"{loc_bit} · compared against {html.escape(status['source'] or 'team')} · "
-                    f"{len(status['expected'])} on team that day · "
-                    f"{len(status['filled'])} filled · "
-                    f"<b>{len(status['missing'])} did not fill</b></p>"
-                    "<p class='sub'>People added after this date are not listed. "
+                    f"{status['expected']} expected person/dates · "
+                    f"{status['filled']} filled person/dates · "
+                    f"<b>{len(status['missing'])} missing person/dates</b></p>"
+                    "<p class='sub'>Only weekdays are checked. People added after a date are not listed. "
                     "People stay listed through Left on and drop off from the next working day "
                     "(Saturday and Sunday skipped). "
                     "<b>Managers</b> are not listed — they cover several projects and their work is supervisory.</p>"
@@ -4359,6 +4409,10 @@ class Handler(BaseHTTPRequestHandler):
                   f'<div class="ok">Saved task #{tid}. Change In/Out if you are logging another '
                   f'slice of the same day; a task that already runs to 18:30 or later cannot be '
                   f'saved again today.</div>')
+        elif "leave" in q:
+            ok = (f'<div class="ok">Leave recorded for {html.escape(fmt_day(q["leave"][0]))}'
+                f' to {html.escape(fmt_day(q["leave"][1] if len(q["leave"]) > 1 else q["leave"][0]))}.'
+                f' You will not appear in Who didn\'t fill for those dates.</div>')
         elif "err" in q:
             ok = f'<div class="err">{html.escape(q["err"][0])}</div>'
         elif "del" in q:
@@ -4418,7 +4472,34 @@ class Handler(BaseHTTPRequestHandler):
                 '<div class="full"><label>Assignee</label>'
                 '<div class="whoami" style="margin:0">You are not signed in &mdash; '
                 '<a href="/signin">sign in</a> so the task is logged against your name.</div></div>')
+        leave_edit = parse_iso_date(q.get("leave_edit", [""])[0]) if q.get("leave_edit") else None
+        leave_from = leave_edit or today_iso()
+        leave_to = leave_edit or today_iso()
+        leave_rows = "".join(
+            f'<tr><td>{html.escape(fmt_day(day))}</td>'
+            f'<td><a href="/?leave_edit={html.escape(day)}">Edit</a></td>'
+            f'<td><form method="POST" action="/leave-remove" style="margin:0" '
+            f'onsubmit="return confirm(\'Remove leave for {html.escape(day)}?\')">'
+            f'<input type="hidden" name="work_date" value="{html.escape(day)}">'
+            f'<button type="submit" style="background:#a33;padding:4px 10px">Remove</button></form></td></tr>'
+            for day in leave_days_for(me["id"]))
+        leave_html = (
+            '<section style="background:#fff7ed;border:1px solid #f0c28b;border-radius:10px;padding:14px 18px;margin:0 0 18px">'
+            '<h2 style="margin:0 0 4px">Leave management</h2>'
+            '<p class="sub">Only your own leave dates are shown. Enter a range, then save, edit, or remove dates here.</p>'
+            '<form method="POST" action="/leave" style="background:transparent;border:0;padding:0;margin:0 0 10px">'
+            '<div class="grid">'
+            f'<div><label>Leave From</label><input type="date" name="leave_from" value="{html.escape(leave_from)}" required></div>'
+            f'<div><label>Leave To</label><input type="date" name="leave_to" value="{html.escape(leave_to)}" required></div>'
+            '</div><div class="actions" style="margin-top:10px">'
+            '<button type="submit" style="background:#8a3d00">Save leave</button>'
+            '<span class="hint">Weekends are skipped automatically.</span></div></form>'
+            '<table style="margin-top:10px"><thead><tr><th>Date</th><th>Edit</th><th>Remove</th></tr></thead><tbody>'
+            + (leave_rows or '<tr><td colspan="3" class="none">No leave dates recorded.</td></tr>')
+            + '</tbody></table></section>')
         page = PAGE.format(assignees=assignees, ok=ok, today=dt.date.today().isoformat(),
+                           leave_from=html.escape(leave_from), leave_to=html.escape(leave_to),
+                           leave_html=leave_html,
                            ref=json.dumps(reference_data()), recent=recent,
                            sticky=STICKY_JS, edit_json=edit_json, edit_id=edit_id,
                            whoami=whoami_banner(self),
@@ -4441,6 +4522,41 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(303)
             self.send_header("Set-Cookie", f"uid={row['id']}; Path=/; Max-Age=315360000")  # ~10 years
             self.send_header("Location", nxt)
+            self.end_headers()
+            return
+
+        if self.path == "/leave":
+            me = signed_in_person(self)
+            if not me:
+                self._send(render_signin("/", "Sign in to mark your leave."), 403)
+                return
+            try:
+                start, end = mark_leave(me["id"], form.get("leave_from", [""])[0],
+                                        form.get("leave_to", [""])[0])
+            except Exception as e:
+                self.send_response(303)
+                self.send_header("Location", "/?err=" + quote(str(e), safe=""))
+                self.end_headers()
+                return
+            self.send_response(303)
+            self.send_header("Location", "/?leave=" + quote(start, safe="") + "&leave=" + quote(end, safe=""))
+            self.end_headers()
+            return
+
+        if self.path == "/leave-remove":
+            me = signed_in_person(self)
+            if not me:
+                self._send(render_signin("/", "Sign in to remove your leave."), 403)
+                return
+            try:
+                day = remove_leave(me["id"], form.get("work_date", [""])[0])
+            except Exception as e:
+                self.send_response(303)
+                self.send_header("Location", "/?err=" + quote(str(e), safe=""))
+                self.end_headers()
+                return
+            self.send_response(303)
+            self.send_header("Location", "/?leave_removed=" + quote(day, safe=""))
             self.end_headers()
             return
 

@@ -217,6 +217,14 @@ CREATE TABLE project_people (
 );
 CREATE UNIQUE INDEX ix_pp_open ON project_people(project_code, person_id) WHERE left_on IS NULL;
 
+-- A person can mark a specific day as leave without changing project membership.
+CREATE TABLE leave_days (
+    person_id  INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+    work_date  TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (person_id, work_date)
+);
+
 -- QC Support assigned to a QC Reviewer (team lead) on a project.
 -- A support sits on one lead's row; a lead can have two or more supports.
 CREATE TABLE lead_support (

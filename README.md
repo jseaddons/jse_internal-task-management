@@ -54,6 +54,10 @@ the database**, so nobody maintains lists in Excel.
    Date → Project → Sheet Type → Master Task → Building/Level/Model → Task Name →
    In/Out time → Status → Save. Each Save writes one task row, logged against
    the signed-in person.
+  If you are absent, enter a **Leave From** and **Leave To** date and click
+  **Save leave**. Saved leave dates appear below the form, where you can edit
+  or remove an accidentally entered date. Leave dates are excluded for you from
+  the Reports → Who didn't fill report; they do not change project membership.
 
 **Rules that keep it safe:**
 - Run the form on **one machine only**, and keep `tasklog.db` on **that machine's

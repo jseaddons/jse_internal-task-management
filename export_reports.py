@@ -3,8 +3,9 @@
 """
 Export a report to .xlsx.
 
-  --report daily    (default) -> DAILY PROGRESS REPORT for one date
+    --report daily    (default) -> DAILY PROGRESS REPORT for one date
                                   (+ Not filled sheet + Permission),
+    --report notfilled -> people and dates with no task logged in the range.
                                   matching the workbook layout.
   --report manday   -> Man-day Summary for the given filters.
   --report search   -> Search results for the given filters.
@@ -296,6 +297,17 @@ def daily_fill_status(con, report_date, project, location=None):
                "location": p[3], "role": p[4]} for p in team]
     if location:
         people = [p for p in people if p["location"] == location]
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS leave_days (
+            person_id INTEGER NOT NULL,
+            work_date TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (person_id, work_date)
+        )
+    """)
+    leave_ids = {r[0] for r in con.execute(
+        "SELECT person_id FROM leave_days WHERE work_date=?", (report_date,))}
+    people = [p for p in people if p["id"] not in leave_ids]
     filled_ids = set()
     if project and report_date:
         sql = (
@@ -316,22 +328,59 @@ def daily_fill_status(con, report_date, project, location=None):
     }
 
 
-def write_not_filled_sheet(con, ws, report_date, project=None, location=None):
+def working_days(dfrom, dto):
+    """Return weekdays in the inclusive date range."""
+    start = _as_date(dfrom)
+    end = _as_date(dto or dfrom)
+    if not start or not end or end < start:
+        return []
+    days = []
+    while start <= end:
+        if start.weekday() < 5:
+            days.append(start.isoformat())
+        start += dt.timedelta(days=1)
+    return days
+
+
+def range_fill_status(con, dfrom, dto, project, location=None):
+    """Return one row per project team member and weekday with no task logged."""
+    missing = []
+    expected_by_person = {}
+    filled_by_person = {}
+    for report_date in working_days(dfrom, dto):
+        status = daily_fill_status(con, report_date, project, location)
+        for person in status["expected"]:
+            expected_by_person[person["id"]] = expected_by_person.get(person["id"], 0) + 1
+        for person in status["filled"]:
+            filled_by_person[person["id"]] = filled_by_person.get(person["id"], 0) + 1
+        for person in status["missing"]:
+            missing.append(dict(person, missing_date=report_date))
+    return {
+        "missing": missing,
+        "expected": sum(expected_by_person.values()),
+        "filled": sum(filled_by_person.values()),
+        "days": working_days(dfrom, dto),
+        "source": "project team on each weekday",
+    }
+
+
+def write_not_filled_sheet(con, ws, dfrom, dto=None, project=None, location=None):
     from openpyxl.utils import get_column_letter
     s = _styles()
-    headers = ["Person", "Emp ID", "Role", "Location"]
+    headers = ["Date", "Person", "Emp ID", "Role", "Location"]
     ncol = len(headers)
     ws["A1"] = "DID NOT FILL — no task logged"; ws["A1"].font = s["title"]
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncol)
-    ws["A3"] = "Report date"; ws["A3"].font = s["label"]; ws["B3"] = report_date
+    dto = dto or dfrom
+    ws["A3"] = "Date range"; ws["A3"].font = s["label"]; ws["B3"] = f"{dfrom} to {dto}"
     ws["A4"] = "Project"; ws["A4"].font = s["label"]
     ws["B4"] = project_line(con, project)
-    status = daily_fill_status(con, report_date, project, location)
+    status = range_fill_status(con, dfrom, dto, project, location)
     ws["A5"] = "Compared against"; ws["A5"].font = s["label"]
-    ws["B5"] = (status["source"] or "pick a project") + " (Managers excluded)"
-    ws["A6"] = "Team members"; ws["A6"].font = s["label"]; ws["B6"] = len(status["expected"])
-    ws["A7"] = "Filled a task"; ws["A7"].font = s["label"]; ws["B7"] = len(status["filled"])
-    ws["A8"] = "Did not fill"; ws["A8"].font = s["label"]; ws["B8"] = len(status["missing"])
+    ws["B5"] = "Project team on each weekday (Managers excluded)"
+    ws["A6"] = "Expected person/dates"; ws["A6"].font = s["label"]; ws["B6"] = status["expected"]
+    ws["A7"] = "Filled person/dates"; ws["A7"].font = s["label"]; ws["B7"] = status["filled"]
+    ws["A8"] = "Missing person/dates"; ws["A8"].font = s["label"]; ws["B8"] = len(status["missing"])
     if location:
         ws["A9"] = "Location"; ws["A9"].font = s["label"]; ws["B9"] = location
     hr = 11
@@ -340,7 +389,7 @@ def write_not_filled_sheet(con, ws, report_date, project=None, location=None):
         c.font = s["hdr"]; c.fill = s["fill"]; c.border = s["border"]
     r = hr + 1
     for p in status["missing"]:
-        vals = [p["name"], p["emp_code"] or "", p["role"] or "", p["location"] or ""]
+        vals = [p["missing_date"], p["name"], p["emp_code"] or "", p["role"] or "", p["location"] or ""]
         for i, v in enumerate(vals, 1):
             c = ws.cell(r, i, v)
             c.border = s["border"]
@@ -350,8 +399,8 @@ def write_not_filled_sheet(con, ws, report_date, project=None, location=None):
     elif not status["expected"]:
         ws["A12"] = "No project team yet — add people in Manage Lists."
     elif not status["missing"]:
-        ws["A12"] = "Everyone on the project team logged a task this day."
-    for i, w in enumerate([28, 12, 22, 14], 1):
+        ws["A12"] = "Everyone on the project team logged a task on every weekday."
+    for i, w in enumerate([14, 28, 12, 22, 14], 1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = "A12"
     return len(status["missing"])
@@ -595,7 +644,7 @@ def main():
     ap.add_argument("--db", default=os.path.join(HERE, "tasklog.db"))
     ap.add_argument("--out", default=os.path.join(HERE, "reports.xlsx"))
     ap.add_argument("--report", default="daily",
-                    choices=["daily", "manday", "search", "internal", "matrix"])
+                    choices=["daily", "notfilled", "manday", "search", "internal", "matrix"])
     ap.add_argument("--from", dest="dfrom")
     ap.add_argument("--to", dest="dto")
     ap.add_argument("--project"); ap.add_argument("--building"); ap.add_argument("--level")
@@ -628,7 +677,8 @@ def main():
             n = write_daily_report(con, wb.create_sheet("Daily Report"), report_date,
                                    args.project, loc)
             print(f"  Daily Report   {n:>5} rows (date {report_date})")
-            miss = write_not_filled_sheet(con, wb.create_sheet("Not filled"), report_date,
+            miss = write_not_filled_sheet(con, wb.create_sheet("Not filled"),
+                                          args.dfrom or report_date, args.dto,
                                           args.project, loc)
             print(f"  Not filled     {miss:>5} people")
             # Permission (who left early) — a daily client list, no filters needed
@@ -640,6 +690,11 @@ def main():
             for row in pr:
                 perm.append(list(row))
             print(f"  Permission     {len(pr):>5} rows")
+        elif args.report == "notfilled":
+            miss = write_not_filled_sheet(con, wb.create_sheet("Not filled"),
+                                          args.dfrom or report_date, args.dto,
+                                          args.project, args.location)
+            print(f"  Not filled     {miss:>5} people/dates")
         elif args.report == "matrix":
             n = write_matrix_report(con, wb.create_sheet("Zone-Level Grid"),
                                     args.project, args.building, args.level,
